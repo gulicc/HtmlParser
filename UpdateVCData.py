@@ -8,15 +8,19 @@ import math
 
 # set up mongodb connection
 client = pymongo.MongoClient('localhost', 27017)
-db = client.CapitalData
+db = client.CapitalDataTest
 db_vc = db.vc_institutions
 
 # target url = url_front + #page + url_rear
-url1_base = 'http://newseed.pedaily.cn'
-url1_front = 'http://newseed.pedaily.cn/vc/p'
+url1_base = 'http://www.newseed.cn'
+url1_front = 'http://www.newseed.cn/vc/p'
 url1_rear = ''
 
-for page in range(151,590):
+PAGE_START = 1
+PAGE_STOP = 601
+TIME_INTERVAL = 6
+
+for page in range(PAGE_START,PAGE_STOP+1):
 	count = 0
 	url = url1_front+str(page)+url1_rear
 	# try 5 times to open url
@@ -34,27 +38,33 @@ for page in range(151,590):
 		print("Cannot open url. Abort.")
 		break
 	html = response.read()
-	soup = BeautifulSoup(html, 'html.parser')	# Parse html
-	newslist = soup.find(id="newslist")
-	li = newslist.select(".list-content")
+	# extract information
+	soup = BeautifulSoup(html, 'html.parser')
+	ul = soup.select_one(".vc-list")
+	li = ul.select(".table-plate")
 	if len(li)==0:
 		print("---------- Fail: Empty Page. Break. ----------")
 		break
 	# for each VC institution
 	for itm in li:
-		tag = itm.select_one(".u-name")
-		if tag:
-			full_name = tag.string
-			# update detail page url
-			detail_url = url1_base+tag.get('href')
+		udata = {}
+		tag = itm.select_one("a")
+		if tag and tag.get('href'):
+			udata['detail_url'] = tag.get('href')		# detail url
+		tag = itm.select_one(".td2-com")
+		if tag and tag.string:
+			full_name = tag.string						# full name
+			# update vc data if full name exists
 			db_vc.find_one_and_update(
-				{'full_name':full_name},
-				{'$set': {'detail_url':detail_url}})
+				{'full_name': full_name},
+				{'$set': udata},
+				upsert = True
+			)
 			count = count+1
 	# insert to mongodb
 	print(str(count)+" VC institutions updated.")
 	print("---------- page "+str(page)+" complete ----------")
-	print("Wait for 10 secs...")
-	time.sleep(10)
+	print("Wait for {} secs...".format(TIME_INTERVAL))
+	time.sleep(TIME_INTERVAL)
 # complete
 print("complete.")

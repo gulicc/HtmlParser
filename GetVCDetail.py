@@ -6,9 +6,9 @@ import pymongo
 import time
 import math
 
-url1_base = 'http://newseed.cn'
 
-SINGLE_STEP = 'off'
+SINGLE_STEP = 'off'		# 'on' for debug, 'off' for running
+TIME_INTERVAL = 6		# time interval between page requests
 
 # read VC list from mongodb
 client = pymongo.MongoClient('localhost', 27017)
@@ -16,8 +16,11 @@ db = client.CapitalData
 db_vc = db.vc_institutions
 db_investor = db.investors
 
+# record progress, reset 'traverse' to represent a new traverse
+# db_vc.update_many({}, {'$set': {'traverse':0}})
+
 # for each VC whose detail page has not been parsed
-vc_cursor = db_vc.find({'info_tags':{'$exists':False}, 'invest_tags':{'$exists':False}}).batch_size(10)	# set smaller batch size to avoid cursor error due to connection timeout
+vc_cursor = db_vc.find({'traverse':0}).batch_size(10)	# set smaller batch size to avoid cursor error due to connection timeout
 for vc in vc_cursor:
 	url = vc['detail_url']
 	vc_id = vc['_id']
@@ -39,6 +42,9 @@ for vc in vc_cursor:
 	html = response.read()
 	soup = BeautifulSoup(html, 'html.parser')
 	# get VC detail data in the page
+	tag = soup.select_one(".short-name")
+	if tag and tag.string and len(tag.string)>0:
+		vc['short_name'] = tag.string 						# short name
 	tag = soup.select_one(".subinfo")
 	tag1 = tag.select_one("p")
 	if tag1 and tag1.string and len(tag1.string) > 0:		# English name
@@ -67,8 +73,8 @@ for vc in vc_cursor:
 	tag4 = tag1.next_sibling.next_sibling
 	if tag4:
 		tag4 = tag4.select_one("a")			# website
-	if tag4 and hasattr(tag4, 'href'):
-		vc['website'] = tag4.get('href')
+		if tag4 and hasattr(tag4, 'href'):
+			vc['website'] = tag4.get('href')
 	desc = ''
 	tag5 = soup.select_one(".desc")			# description
 	if tag5 and tag5.string:
@@ -79,11 +85,13 @@ for vc in vc_cursor:
 	if len(desc)>0:
 		vc['description'] = desc
 	# update VC detail in mongodb
+	vc['traverse'] = 1
 	db_vc.find_one_and_update({'_id':vc_id}, {'$set':vc})
 	print(vc['full_name']+' updated.')
+
 	# get investor in this VC institution
 	print('Get investor list ...')
-	investor_list = []
+#	investor_list = []
 	li = []
 	tag1 = soup.select_one(".people-list")	# investor list
 	if tag1:
@@ -111,17 +119,18 @@ for vc in vc_cursor:
 					investor['areas'] = ll
 			investor['institution_name'] = vc['full_name']	# institution name
 			investor['type'] = 'VC'
-			investor_list.append(investor)
-		if len(investor_list)>0:
-			result = db_investor.insert_many(investor_list)
-			print(str(len(result.inserted_ids))+" investors inserted.")
-		else:
-			print("0 investors inserted.")
+			# update investor data
+			db_investor.find_one_and_update(
+				{'chn_name': investor['chn_name']},
+				{'$set': investor},
+				upsert = True
+			)
+		print("{} investors updated.".format( len(li) ))
 	else:
 		print("No investors inserted.")
 	# wait 2 seconds
-	print('Wait 5 seconds... ----------')
-	time.sleep(5)
+	print('Wait {} seconds... ----------'.format(TIME_INTERVAL))
+	time.sleep(TIME_INTERVAL)
 	if SINGLE_STEP == 'on':
 		break
 
