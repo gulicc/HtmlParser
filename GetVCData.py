@@ -13,14 +13,14 @@ url1_rear = ''
 
 # set up mongodb connection
 client = pymongo.MongoClient('localhost', 27017)
-db = client.CapitalDataTest
+db = client.CapitalData
 db_vc = db.vc_institutions
 
 # clear (optional)
 # db_vc.remove()
 
 count = 0
-for page in range(1, 6):
+for page in range(1, 590):
 	vclist = []
 	url = url1_front+str(page)+url1_rear
 	# try to open url 5 times
@@ -39,7 +39,7 @@ for page in range(1, 6):
 		break
 	# parse HTML
 	html = response.read()
-	soup = BeautifulSoup(html, 'html.parser')	# Parse html
+	soup = BeautifulSoup(html, 'html.parser')
 	# get VC institution list in the page
 	newslist = soup.find(id="newslist")
 	li = newslist.select(".list-content")
